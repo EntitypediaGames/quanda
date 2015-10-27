@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:security="http://www.springframework.org/schema/security"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns:task="http://www.springframework.org/schema/task"
+
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+                           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+                           http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd
+                           http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+                           http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd
+                           http://www.springframework.org/schema/task http://www.springframework.org/schema/task/spring-task.xsd">
+
+    <util:properties id="quandaProperties" location="classpath:/quanda.properties"/>
+    <context:property-placeholder properties-ref="quandaProperties"/>
+
+    <bean id="updatableProperties" class="org.entitypedia.games.common.config.UpdatableProperties">
+        <property name="propertiesPath" value="updatable-quanda.properties"/>
+        <property name="backupPropertiesName" value="quandaProperties"/>
+        <property name="backupProperties" ref="quandaProperties"/>
+    </bean>
+
+    <context:annotation-config/>
+    <context:component-scan base-package="org.entitypedia.games.quanda.common"/>
+
+    <bean id="hibernateStatisticsLogger" class="org.entitypedia.games.common.util.logging.HibernateStatisticsLogger">
+        <property name="sessionFactory" ref="sessionFactory"/>
+    </bean>
+
+    <bean id="dataSource" class="org.springframework.jdbc.datasource.LazyConnectionDataSourceProxy">
+        <property name="targetDataSource" ref="mainDataSource"/>
+        <property name="defaultAutoCommit" value="false"/>
+    </bean>
+
+    <bean id="mainDataSource" class="com.jolbox.bonecp.BoneCPDataSource" destroy-method="close">
+        <property name="driverClass" value="${hibernate.connection.driver_class}"/>
+        <property name="jdbcUrl" value="${hibernate.connection.url}"/>
+        <property name="username" value="${hibernate.connection.username}"/>
+        <!--<property name="password" value="${hibernate.connection.password}"/>-->
+        <property name="password" value="#{@environment.getProperty('hibernate.connection.password')}"/>
+        <property name="idleConnectionTestPeriodInMinutes" value="1"/>
+        <property name="idleMaxAgeInMinutes" value="4"/>
+        <property name="maxConnectionsPerPartition" value="10"/>
+        <property name="minConnectionsPerPartition" value="3"/>
+        <property name="partitionCount" value="2"/>
+        <property name="acquireIncrement" value="10"/>
+        <property name="statementsCacheSize" value="50"/>
+        <property name="defaultAutoCommit" value="false"/>
+    </bean>
+
+    <bean id="sessionFactory" class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="configLocation" value="classpath:conf/hibernate/hibernate.cfg.xml"/>
+        <property name="hibernateProperties">
+            <value>hibernate.dialect=${hibernate.dialect}</value>
+        </property>
+    </bean>
+
+    <tx:annotation-driven transaction-manager="transactionManager" mode="aspectj"/>
+    <bean id="transactionManager" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+        <property name="sessionFactory" ref="sessionFactory"/>
+    </bean>
+
+    <bean id="openSessionInViewFilterChainProxy" class="org.springframework.security.web.FilterChainProxy">
+        <constructor-arg>
+            <list>
+                <security:filter-chain pattern="/resources-#{quandaProperties['app.version']}/**" filters=""/>
+                <security:filter-chain pattern="/favicon.ico" filters=""/>
+                <security:filter-chain pattern="/apidocs/**" filters=""/>
+                <security:filter-chain pattern="/**" filters="openSessionInViewFilter,taskExecutingFilter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <bean id="openSessionInViewFilter" class="org.springframework.orm.hibernate4.support.OpenSessionInViewFilter"/>
+    <bean id="taskExecutingFilter" class="org.entitypedia.games.quanda.common.async.TaskExecutingFilter"/>
+
+    <!-- anonymous authentication for all -->
+    <bean id="commonFilterChainProxy" class="org.springframework.security.web.FilterChainProxy">
+        <constructor-arg>
+            <list>
+                <security:filter-chain pattern="/resources-#{quandaProperties['app.version']}/**" filters=""/>
+                <security:filter-chain pattern="/favicon.ico" filters=""/>
+                <security:filter-chain pattern="/apidocs/**" filters=""/>
+                <security:filter-chain pattern="/**" filters="anonymousAuthFilter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <bean id="anonymousAuthFilter"
+          class="org.springframework.security.web.authentication.AnonymousAuthenticationFilter">
+        <constructor-arg index="0" value="anon-key"/>
+    </bean>
+
+
+    <bean id="oauthTokenDAO" class="org.entitypedia.games.common.repository.hibernateimpl.OAuthTokenDAO"/>
+    <bean id="oauthTokenService" class="org.entitypedia.games.common.service.impl.OAuthTokenService"/>
+    <bean id="consumerTokenServices" class="org.entitypedia.games.common.oauth.DBConsumerTokenServices"/>
+
+    <bean id="gameFrameworkProtectedResourceDetails"
+          class="org.springframework.security.oauth.consumer.BaseProtectedResourceDetails">
+        <property name="id" value="game-framework"/>
+        <!--request yours at games@entitypedia.org-->
+        <property name="consumerKey" value="#{@environment.getProperty('gameframework.consumerKey')}"/>
+        <property name="sharedSecret">
+            <bean id="sharedConsumerSecret"
+                  class="org.springframework.security.oauth.common.signature.SharedConsumerSecretImpl">
+                <!--request yours at games@entitypedia.org-->
+                <constructor-arg index="0" value="#{@environment.getProperty('gameframework.consumerSecret')}"/>
+            </bean>
+        </property>
+        <property name="requestTokenURL" value="${gameframework.secure.root}oauth/request_token"/>
+        <property name="userAuthorizationURL" value="${gameframework.secure.root}login"/>
+        <property name="accessTokenURL" value="${gameframework.secure.root}oauth/access_token"/>
+    </bean>
+
+
+    <bean id="apiAuthenticationManager" class="org.springframework.security.authentication.ProviderManager">
+        <constructor-arg>
+            <list>
+                <bean id="nullAuthenticationProvider"
+                      class="org.springframework.security.config.authentication.AuthenticationManagerBeanDefinitionParser$NullAuthenticationProvider"/>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <!--
+        <security:global-method-security pre-post-annotations="enabled" mode="aspectj"/>
+    -->
+    <!-- ************************************************** -->
+    <!-- Method Authorization                               -->
+    <!-- ************************************************** -->
+    <bean id="methodSecurityInterceptor"
+          class="org.springframework.security.access.intercept.aspectj.AspectJMethodSecurityInterceptor">
+        <property name="accessDecisionManager" ref="methodAccessDecisionManager"/>
+        <property name="authenticationManager" ref="apiAuthenticationManager"/>
+        <property name="securityMetadataSource" ref="methodSecurityMetadataSource"/>
+        <property name="afterInvocationManager" ref="methodAfterInvocationManager"/>
+    </bean>
+    <bean id="methodAnnotationSecurityAspect"
+          class="org.springframework.security.access.intercept.aspectj.aspect.AnnotationSecurityAspect"
+          factory-method="aspectOf">
+        <property name="securityInterceptor" ref="methodSecurityInterceptor"/>
+    </bean>
+    <bean id="methodAfterInvocationManager"
+          class="org.springframework.security.access.intercept.AfterInvocationProviderManager">
+        <property name="providers">
+            <list>
+                <ref bean="methodPostAdviceProvider"/>
+            </list>
+        </property>
+    </bean>
+    <bean id="methodAccessDecisionManager" class="org.springframework.security.access.vote.UnanimousBased">
+        <constructor-arg index="0">
+            <list>
+                <ref bean="methodPreAdviceVoter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+    <!-- Overall Delegating Metadata Source -->
+    <bean id="methodSecurityMetadataSource"
+          class="org.springframework.security.access.method.DelegatingMethodSecurityMetadataSource">
+        <constructor-arg index="0">
+            <list>
+                <ref bean="methodPrePostMetadataSource"/>
+            </list>
+        </constructor-arg>
+    </bean>
+    <!-- @Pre/@Post Method Advice Voters -->
+    <bean id="methodPreAdviceVoter"
+          class="org.springframework.security.access.prepost.PreInvocationAuthorizationAdviceVoter">
+        <constructor-arg ref="methodExprPreInvocationAdvice"/>
+    </bean>
+    <bean id="methodPostAdviceProvider"
+          class="org.springframework.security.access.prepost.PostInvocationAdviceProvider">
+        <constructor-arg ref="methodExprPostInvocationAdvice"/>
+    </bean>
+    <bean id="methodPrePostMetadataSource"
+          class="org.springframework.security.access.prepost.PrePostAnnotationSecurityMetadataSource">
+        <constructor-arg ref="methodExprAnnotationAttrFactory"/>
+    </bean>
+    <!-- @Pre/@Post Method Expression Handler -->
+    <bean id="methodExprHandler"
+          class="org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler"/>
+    <bean id="methodExprPreInvocationAdvice"
+          class="org.springframework.security.access.expression.method.ExpressionBasedPreInvocationAdvice">
+        <property name="expressionHandler" ref="methodExprHandler"/>
+    </bean>
+    <bean id="methodExprPostInvocationAdvice"
+          class="org.springframework.security.access.expression.method.ExpressionBasedPostInvocationAdvice">
+        <constructor-arg ref="methodExprHandler"/>
+    </bean>
+    <bean id="methodExprAnnotationAttrFactory"
+          class="org.springframework.security.access.expression.method.ExpressionBasedAnnotationAttributeFactory">
+        <constructor-arg ref="methodExprHandler"/>
+    </bean>
+
+    <bean id="gameFrameworkRESTTemplate"
+          class="org.entitypedia.games.gameframework.client.template.GamesFrameworkRESTTemplate">
+        <constructor-arg ref="gameFrameworkProtectedResourceDetails"/>
+        <property name="tokenServices" ref="consumerTokenServices"/>
+        <property name="frameworkAPIRoot" value="${gameframework.api.root}"/>
+        <property name="frameworkSecureAPIRoot" value="${gameframework.secure.api.root}"/>
+        <property name="httpClient" ref="gameFrameworkHttpClient"/>
+    </bean>
+
+    <!-- deregister drivers on context close -->
+    <bean id="deregisterDriversContextClosedListener"
+          class="org.entitypedia.games.common.util.DeregisterDriversContextClosedListener"/>
+
+    <!-- provides gameFrameworkHttpClient through @Bean annotation -->
+    <bean id="gameFrameworkHttpClientBuilder"
+          class="org.entitypedia.games.common.api.controllers.GamesFrameworkHttpClientBuilder"/>
+
+
+    <task:annotation-driven executor="delegatingQueueingAsyncTaskExecutor" mode="aspectj" />
+    <bean id="delegatingQueueingAsyncTaskExecutor" class="org.entitypedia.games.quanda.common.async.DelegatingQueueingAsyncTaskExecutor">
+        <constructor-arg ref="taskExecutor"/>
+    </bean>
+    <task:executor id="taskExecutor" pool-size="5-20" queue-capacity="1000" rejection-policy="DISCARD"/>
+</beans>

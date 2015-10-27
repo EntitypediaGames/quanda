@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:mvc="http://www.springframework.org/schema/mvc" xmlns:util="http://www.springframework.org/schema/util"
+       xmlns:security="http://www.springframework.org/schema/security"
+
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+                           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+                           http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc.xsd
+                           http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+                           http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd">
+
+    <util:properties id="quandaProperties" location="classpath:/quanda.properties" />
+    <context:property-placeholder properties-ref="quandaProperties"/>
+
+    <bean id="updatableProperties" class="org.entitypedia.games.common.config.UpdatableProperties">
+        <property name="propertiesPath" value="updatable-quanda.properties"/>
+        <property name="backupPropertiesName" value="quandaProperties"/>
+        <property name="backupProperties" ref="quandaProperties"/>
+    </bean>
+
+    <context:annotation-config/>
+    <context:component-scan base-package="org.entitypedia.games.quanda.web"/>
+    <mvc:annotation-driven/>
+    <mvc:default-servlet-handler/>
+    <mvc:resources mapping="/resources-#{quandaProperties['app.version']}/**" location="/resources/"/>
+    <mvc:resources mapping="/apidocs/**" location="/apidocs/"/>
+    <mvc:resources mapping="/favicon.ico" location="/resources/favicon.ico"/>
+
+    <bean id="viewResolver" class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+        <property name="viewClass" value="org.springframework.web.servlet.view.JstlView"/>
+        <property name="prefix" value="/WEB-INF/jsp/"/>
+        <property name="suffix" value=".jsp"/>
+        <property name="exposedContextBeanNames">
+            <list><value>quandaProperties</value></list>
+        </property>
+    </bean>
+
+    <!--consumer for game framework. 3-legged-->
+    <bean id="oauthFilterChainProxy" class="org.springframework.security.web.FilterChainProxy">
+        <constructor-arg>
+            <list>
+                <security:filter-chain pattern="/login" filters="
+                   oauthChannelProcessingFilter,
+                   exceptionTranslationFilter,
+                   oauthConsumerContextFilter,
+                   oauthConsumerProcessingFilter"/>
+                <security:filter-chain pattern="/logout" filters="oauthChannelProcessingFilter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <bean id="oauthChannelProcessingFilter" class="org.springframework.security.web.access.channel.ChannelProcessingFilter">
+        <property name="channelDecisionManager" ref="channelDecisionManager"/>
+        <property name="securityMetadataSource">
+            <security:filter-security-metadata-source>
+                <security:intercept-url pattern="/login" access="REQUIRES_SECURE_CHANNEL"/>
+            </security:filter-security-metadata-source>
+        </property>
+    </bean>
+
+    <bean id="channelDecisionManager" class="org.springframework.security.web.access.channel.ChannelDecisionManagerImpl">
+        <property name="channelProcessors">
+            <list>
+                <ref bean="secureChannelProcessor"/>
+                <ref bean="insecureChannelProcessor"/>
+            </list>
+        </property>
+    </bean>
+
+    <bean id="secureChannelProcessor" class="org.springframework.security.web.access.channel.SecureChannelProcessor">
+        <property name="entryPoint" ref="retryWithHttpsEntryPoint"/>
+    </bean>
+    <bean id="insecureChannelProcessor" class="org.springframework.security.web.access.channel.InsecureChannelProcessor">
+        <property name="entryPoint" ref="retryWithHttpEntryPoint"/>
+    </bean>
+
+    <bean id="retryWithHttpEntryPoint" class="org.springframework.security.web.access.channel.RetryWithHttpEntryPoint">
+        <property name="portMapper" ref="portMapper"/>
+    </bean>
+    <bean id="retryWithHttpsEntryPoint" class="org.springframework.security.web.access.channel.RetryWithHttpsEntryPoint">
+        <property name="portMapper" ref="portMapper"/>
+    </bean>
+    <bean id="portMapper" class="org.springframework.security.web.PortMapperImpl">
+        <property name="portMappings">
+            <map>
+                <entry key="80" value="443"/>
+                <entry key="9638" value="9639"/>
+            </map>
+        </property>
+    </bean>
+
+    <bean id="exceptionTranslationFilter" class="org.springframework.security.web.access.ExceptionTranslationFilter">
+        <constructor-arg ref="authenticationEntryPoint"/>
+        <property name="accessDeniedHandler" ref="accessDeniedHandler"/>
+    </bean>
+
+    <bean id="authenticationEntryPoint" class="org.springframework.security.oauth.provider.OAuthProcessingFilterEntryPoint">
+        <property name="realmName" value="Entitypedia Quanda"/>
+    </bean>
+
+    <bean id="accessDeniedHandler" class="org.springframework.security.web.access.AccessDeniedHandlerImpl"/>
+
+    <bean id="oauthConsumerContextFilter" class="org.entitypedia.games.common.oauth.OAuthCallbackConsumerContextFilter">
+        <property name="consumerSupport" ref="coreOAuthConsumerSupport"/>
+        <property name="rememberMeServices">
+            <bean id="noOpOAuthRememberMeServices" class="org.springframework.security.oauth.consumer.rememberme.NoOpOAuthRememberMeServices"/>
+        </property>
+        <property name="portResolver">
+            <bean id="portResolver" class="org.springframework.security.web.PortResolverImpl">
+                <property name="portMapper" ref="portMapper"/>
+            </bean>
+        </property>
+        <property name="tokenServices" ref="consumerTokenServices"/>
+    </bean>
+
+    <bean id="coreOAuthConsumerSupport" class="org.springframework.security.oauth.consumer.client.CoreOAuthConsumerSupport">
+        <property name="protectedResourceDetailsService" ref="protectedResourceDetailsService"/>
+
+        <!--debug-->
+        <!--<property name="connectionTimeout" value="9000000"/>-->
+        <!--<property name="readTimeout" value="9000000"/>-->
+    </bean>
+
+    <bean id="protectedResourceDetailsService" class="org.springframework.security.oauth.consumer.InMemoryProtectedResourceDetailsService">
+        <property name="resourceDetailsStore">
+            <map>
+                <entry key="game-framework" value-ref="gameFrameworkProtectedResourceDetails"/>
+            </map>
+        </property>
+    </bean>
+
+    <bean id="oauthConsumerProcessingFilter" class="org.springframework.security.oauth.consumer.filter.OAuthConsumerProcessingFilter">
+        <property name="protectedResourceDetailsService" ref="protectedResourceDetailsService"/>
+        <property name="objectDefinitionSource" ref="objectDefinitionSource"/>
+        <property name="requireAuthenticated" value="false"/>
+    </bean>
+
+    <bean id="objectDefinitionSource" class="org.springframework.security.web.access.intercept.DefaultFilterInvocationSecurityMetadataSource">
+        <constructor-arg index="0">
+            <bean id="linkedHashMap" class="java.util.LinkedHashMap">
+                <constructor-arg index="0">
+                    <map>
+                        <entry key-ref="loginRequestMatcher">
+                            <bean id="securityConfig" class="org.springframework.security.access.SecurityConfig">
+                                <constructor-arg index="0" value="game-framework"/>
+                            </bean>
+                        </entry>
+                    </map>
+                </constructor-arg>
+
+            </bean>
+        </constructor-arg>
+    </bean>
+
+    <bean id="loginRequestMatcher" class="org.springframework.security.web.util.matcher.AntPathRequestMatcher">
+        <constructor-arg index="0" value="/login"/>
+    </bean>
+
+    <bean id="httpResponseStatusExceptionResolver" class="org.entitypedia.games.common.web.handlers.HTTPResponseStatusExceptionResolver"/>
+</beans>

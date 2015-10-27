@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!DOCTYPE hibernate-mapping PUBLIC
+        "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
+
+<hibernate-mapping package="org.entitypedia.games.quanda.model">
+    <class name="org.entitypedia.games.quanda.common.model.Question" table="question">
+        <cache usage="read-write"/>
+        <id name="id" column="id">
+            <generator class="identity"/>
+        </id>
+
+        <property name="clueId" column="clue_id" not-null="false" update="false"/>
+        <property name="templateId" column="template_id" not-null="false" update="false"/>
+        <many-to-one name="user" column="user_id" not-null="true" update="false"/>
+        <property name="creationTime" column="creation_time" not-null="true" update="false" type="timestamp"/>
+        <property name="answer" column="answer" not-null="true" update="false"/>
+        <property name="wordDifficulty" column="word_difficulty" not-null="true" update="false"/>
+        <property name="clueDifficulty" column="clue_difficulty" not-null="true" update="false"/>
+    </class>
+</hibernate-mapping>

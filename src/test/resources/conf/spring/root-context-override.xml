@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean id="gameFrameworkRESTTemplate" class="org.entitypedia.games.gameframework.client.template.SignalingGameFrameworkRESTTemplate">
+        <constructor-arg ref="gameFrameworkProtectedResourceDetails"/>
+        <property name="tokenServices" ref="consumerTokenServices"/>
+        <property name="frameworkAPIRoot" value="${gameframework.api.root}"/>
+        <property name="frameworkSecureAPIRoot" value="${gameframework.secure.api.root}"/>
+        <property name="httpClient" ref="gameFrameworkHttpClient"/>
+    </bean>
+
+    <bean id="taskExecutingFilter" class="org.entitypedia.games.quanda.common.async.ZeroFilter"/>
+
+    <bean id="delegatingQueueingAsyncTaskExecutor" class="org.entitypedia.games.quanda.common.async.QueueingAsyncSyncTaskExecutor"/>
+</beans>

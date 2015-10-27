@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ehcache name="ehcacheQuanda"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://ehcache.org/ehcache.xsd"
+        updateCheck="false"
+        monitoring="off">
+    <diskStore path="java.io.tmpdir"/>
+    <defaultCache
+            maxEntriesLocalHeap="100"
+            eternal="false"
+            timeToIdleSeconds="120"
+            timeToLiveSeconds="120"
+            maxEntriesLocalDisk="10000000"
+            diskExpiryThreadIntervalSeconds="120"
+            memoryStoreEvictionPolicy="LRU">
+        <persistence strategy="localTempSwap"/>
+    </defaultCache>
+    <cache
+            name="org.entitypedia.games.common.model.OAuthToken"
+            maxEntriesLocalHeap="1000"
+            eternal="false"
+            timeToIdleSeconds="36000"
+            timeToLiveSeconds="36000"
+            overflowToDisk="false"
+            />
+    <cache
+            name="org.entitypedia.games.quanda.model.QuandaUser"
+            maxEntriesLocalHeap="1000"
+            eternal="false"
+            timeToIdleSeconds="36000"
+            timeToLiveSeconds="36000"
+            overflowToDisk="false"
+            />
+    <cache
+            name="org.entitypedia.games.quanda.model.Question"
+            maxEntriesLocalHeap="1000"
+            eternal="false"
+            timeToIdleSeconds="36000"
+            timeToLiveSeconds="36000"
+            overflowToDisk="false"
+            />
+    <cache
+            name="org.entitypedia.games.quanda.model.Answer"
+            maxEntriesLocalHeap="0"
+            eternal="false"
+            timeToIdleSeconds="10"
+            timeToLiveSeconds="10"
+            overflowToDisk="false"
+            />
+</ehcache>

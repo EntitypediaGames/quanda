@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns:security="http://www.springframework.org/schema/security"
+
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+                           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+                           http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+                           http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd">
+
+    <util:properties id="quandaProperties" location="classpath:/quanda.properties" />
+    <context:property-placeholder properties-ref="quandaProperties"/>
+
+    <context:annotation-config/>
+    <context:component-scan base-package="org.entitypedia.games.quanda.api"/>
+
+    <!--switched from annotation-driven to be able to inject jackson converter-->
+    <bean id="requestMappingHandlerMapping"
+          class="org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping"/>
+    <bean id="requestMappingHandlerAdapter"
+          class="org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter">
+        <property name="messageConverters">
+            <util:list id="beanList">
+                <ref bean="mappingJackson2HttpMessageConverter"/>
+            </util:list>
+        </property>
+    </bean>
+
+
+    <!--2-legged provider for api -->
+    <bean id="apiFilterChainProxy" class="org.entitypedia.games.common.api.handlers.ExceptionHandlingFilterChainProxy">
+        <property name="exceptionResolver" ref="restExceptionResolver"/>
+        <constructor-arg>
+            <list>
+                <security:filter-chain pattern="/webapi/**" filters="
+                   apiProtectedResourceProcessingFilter,
+                   apiFilterSecurityInterceptor"/>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <bean id="apiFilterSecurityInterceptor" class="org.springframework.security.web.access.intercept.FilterSecurityInterceptor">
+        <property name="authenticationManager" ref="apiAuthenticationManager"/>
+        <property name="accessDecisionManager" ref="apiAccessDecisionManager"/>
+        <property name="securityMetadataSource">
+            <security:filter-security-metadata-source request-matcher="ant">
+                <security:intercept-url pattern="/webapi/**" access="ROLE_PLAYER"/>
+            </security:filter-security-metadata-source>
+        </property>
+    </bean>
+
+    <bean id="apiAccessDecisionManager" class="org.springframework.security.access.vote.AffirmativeBased">
+        <constructor-arg>
+            <list>
+                <bean id="roleVoter" class="org.springframework.security.access.vote.RoleVoter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <bean id="apiAuthenticationEntryPoint" class="org.entitypedia.games.common.oauth.OAuthProcessingFilterJSONEntryPoint">
+        <property name="realmName" value="Quanda API"/>
+        <property name="exceptionResolver" ref="restExceptionResolver"/>
+    </bean>
+
+    <bean id="apiProtectedResourceProcessingFilter" class="org.springframework.security.oauth.provider.filter.ProtectedResourceProcessingFilter">
+        <property name="ignoreMissingCredentials" value="true"/>
+        <property name="authenticationEntryPoint" ref="apiAuthenticationEntryPoint"/>
+        <property name="tokenServices" ref="apiOAuthTokenServices"/>
+        <property name="consumerDetailsService" ref="userConsumerDetailsService"/>
+    </bean>
+
+    <bean id="userConsumerDetailsService" class="org.entitypedia.games.common.oauth.GameUserConsumerDetailsService"/>
+
+    <bean id="apiOAuthTokenServices" class="org.springframework.security.oauth.provider.token.InMemoryProviderTokenServices"/>
+
+
+    <!--Jackson is here because it is needed in JacksonMixinSetupAspect, which, in turn is needed in service advices-->
+    <bean id="mappingJackson2HttpMessageConverter" class="org.entitypedia.games.common.util.MapperSavingJackson2HttpMessageConverter">
+        <property name="objectMapper">
+            <bean class="org.entitypedia.games.common.util.HibernateAwareObjectMapper"/>
+        </property>
+    </bean>
+
+    <!--mixin setup aspect-->
+    <bean id="jacksonMixinSetupAspect" class="org.entitypedia.games.common.mixins.aspectj.JacksonMixinSetupAspect" factory-method="aspectOf">
+        <property name="converter" ref="mappingJackson2HttpMessageConverter"/>
+        <property name="attributeFactory" ref="methodExprAnnotationAttrFactory"/>
+        <property name="preAdvice" ref="methodExprPreInvocationAdvice"/>
+    </bean>
+
+    <!-- json exception rendering with message localization support -->
+    <bean id="localeResolver" class="org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver"/>
+
+    <bean id="messageSource" class="org.springframework.context.support.ReloadableResourceBundleMessageSource">
+        <property name="basenames" value="classpath:games-common-messages,classpath:games-framework-messages,classpath:quanda-messages"/>
+        <property name="defaultEncoding" value="UTF-8"/>
+    </bean>
+
+    <!-- Allow Exceptions to be handled in annotated methods if desired.  Otherwise fallback to the 'restExceptionResolver' below: -->
+    <bean id="annotationMethodHandlerExceptionResolver" class="org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver">
+        <property name="order" value="0"/>
+    </bean>
+    <bean id="restExceptionResolver"
+          class="org.entitypedia.games.common.api.handlers.ExceptionDetailsExceptionResolver">
+        <property name="order" value="100"/>
+        <property name="errorResolver">
+            <bean class="org.entitypedia.games.common.api.handlers.DefaultExceptionDetailsResolver">
+                <property name="localeResolver" ref="localeResolver"/>
+                <property name="messageSource" ref="messageSource"/>
+                <property name="defaultMoreInfoUrl" value="http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/mostinconvenienterror.html"/>
+                <property name="defaultExplanationMessage" value="error.default.explanation"/>
+                <property name="defaultWhatToDoMessage" value="error.default.whattodo"/>
+                <property name="exceptionMappingDefinitions">
+                    <map>
+                        <!-- 500 (catch all): -->
+                        <entry key="Throwable" value="status=500, msg=error.generic"/>
+
+                        <entry key="UnsupportedOperationException"
+                               value="status=501, msg=error.UnsupportedOperationException, emsg=error.UnsupportedOperationException.explanation, wmsg=error.UnsupportedOperationException.whattodo, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+
+                        <entry key="GameException" value="status=500, msg=_exmsg, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                        <entry key="AccessDeniedException" value="status=403, msg=_exmsg, target=org.entitypedia.games.common.exceptions.AccessDeniedException, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                        <entry key="IllegalArgumentException" value="status=400, msg=_exmsg, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                        <entry key="IllegalStateException" value="status=500, msg=_exmsg, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                        <entry key="InvalidStateException" value="status=500, msg=_exmsg, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                        <entry key="AuthenticationException" value="status=401, msg=_exmsg, target=org.entitypedia.games.common.exceptions.AuthenticationException, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+
+                        <entry key="SecureConnectionRequiredException" value="status=400, msg=_exmsg, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                        <entry key="InvalidOAuthParametersException" value="status=400, msg=_exmsg, target=org.entitypedia.games.common.exceptions.AuthenticationException, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                        <entry key="UnsupportedSignatureMethodException" value="status=400, msg=_exmsg, target=org.entitypedia.games.common.exceptions.AuthenticationException, infoUrl=http://games.entitypedia.org/quanda/resources-#{quandaProperties['app.version']}/errors/_exclass.html"/>
+                    </map>
+                </property>
+            </bean>
+        </property>
+    </bean>
+
+    <bean id="gameFrameworkProxyController" class="org.entitypedia.games.common.api.controllers.GamesFrameworkProxyController">
+        <property name="frameworkAPIRoot" value="${gameframework.api.root}"/>
+        <property name="frameworkSecureAPIRoot" value="${gameframework.secure.api.root}"/>
+        <property name="consumerTokenServices" ref="consumerTokenServices"/>
+        <property name="protectedResourceDetails" ref="gameFrameworkProtectedResourceDetails"/>
+        <property name="httpClient" ref="gameFrameworkHttpClient"/>
+    </bean>
+
+</beans>

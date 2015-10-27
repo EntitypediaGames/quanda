@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE aspectj PUBLIC
+        "-//AspectJ//DTD//EN" "http://www.eclipse.org/aspectj/dtd/aspectj.dtd">
+
+<aspectj>
+
+    <weaver options="-verbose -showWeaveInfo -Xset:weaveJavaxPackages=true -Xlint:default">
+    </weaver>
+
+    <aspects>
+        <aspect name="org.entitypedia.games.common.model.aspectj.GameUserConsumerDetails"/>
+        <aspect name="org.entitypedia.games.common.mixins.aspectj.JacksonMixinSetupAspect"/>
+    </aspects>
+
+</aspectj>
