@@ -30,7 +30,7 @@ release.properties
 .classpath
 
 # DB models
-models/
+models/db/quanda.*
 
 # release properties
 src/main/resources/updatable-quanda.properties
